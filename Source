@@ -1,0 +1,414 @@
+-- GPTLib.lua
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
+local UIS = game:GetService("UserInputService")
+
+local GPTLib = {}
+GPTLib.__index = GPTLib
+
+-- Theme palettes
+local Themes = {
+    Light   = {Background = Color3.fromRGB(240,240,240), Accent = Color3.fromRGB(100,100,100), Text = Color3.fromRGB(0,0,0)},
+    Dark    = {Background = Color3.fromRGB(30,30,30), Accent = Color3.fromRGB(75,75,75), Text = Color3.fromRGB(255,255,255)},
+    Darker  = {Background = Color3.fromRGB(20,20,20), Accent = Color3.fromRGB(50,50,50), Text = Color3.fromRGB(255,255,255)},
+    Blood   = {Background = Color3.fromRGB(50,0,0), Accent = Color3.fromRGB(100,0,0), Text = Color3.fromRGB(255,200,200)},
+    Grape   = {Background = Color3.fromRGB(60,0,80), Accent = Color3.fromRGB(120,0,160), Text = Color3.fromRGB(230,200,255)},
+    Ocean   = {Background = Color3.fromRGB(0,50,80), Accent = Color3.fromRGB(0,100,160), Text = Color3.fromRGB(200,230,255)},
+    Banana  = {Background = Color3.fromRGB(255,240,120), Accent = Color3.fromRGB(255,200,0), Text = Color3.fromRGB(0,0,0)},
+}
+
+local function SaveConfig(name, data)
+    local folder = Players.LocalPlayer:WaitForChild("PlayerGui"):FindFirstChild("GPTLibConfigs")
+    if not folder then
+        folder = Instance.new("Folder", Players.LocalPlayer.PlayerGui)
+        folder.Name = "GPTLibConfigs"
+    end
+    local config = folder:FindFirstChild(name) or Instance.new("StringValue", folder)
+    config.Name = name
+    config.Value = HttpService:JSONEncode(data)
+end
+
+local function LoadConfig(name)
+    local folder = Players.LocalPlayer:WaitForChild("PlayerGui"):FindFirstChild("GPTLibConfigs")
+    local config = folder and folder:FindFirstChild(name)
+    return config and HttpService:JSONDecode(config.Value) or nil
+end
+
+function GPTLib:CreateWindow(opts)
+    local self = setmetatable({}, GPTLib)
+    self.Title = opts.Title or "Window"
+    self.LoadingScreen = opts.LoadingScreen
+    self.LoadingText = opts.LoadingText or "Loading..."
+    self.KeySystem = opts.KeySystem
+    self.RequiredKey = opts.Key or ""
+    self.Theme = Themes[opts.CurrentTheme] and opts.CurrentTheme or "Dark"
+    self.SaveConfig = opts.SaveConfig
+    self.ConfigName = self.Title .. "_Config"
+    self.Tabs = {}
+
+    self.Root = Instance.new("ScreenGui", Players.LocalPlayer:WaitForChild("PlayerGui"))
+    self.Root.Name = "GPTLibUI"
+    self.Root.ResetOnSpawn = false
+
+    if self.SaveConfig then
+        local c = LoadConfig(self.ConfigName)
+        if c and c.Theme then
+            self.Theme = c.Theme
+        end
+    end
+
+    if self.KeySystem then
+        self:MakeKeyUI()
+    else
+        self:BuildUI()
+    end
+
+    return self
+end
+
+function GPTLib:MakeKeyUI()
+    local f = Instance.new("Frame", self.Root)
+    f.Size = UDim2.new(1, 0, 1, 0)
+    f.BackgroundColor3 = Themes[self.Theme].Background
+    f.BorderSizePixel = 0
+
+    local lbl = Instance.new("TextLabel", f)
+    lbl.Text = self.LoadingText
+    lbl.TextScaled = true
+    lbl.Size = UDim2.new(0.3, 0, 0.1, 0)
+    lbl.Position = UDim2.new(0.35, 0, 0.45, 0)
+    lbl.TextColor3 = Themes[self.Theme].Text
+    lbl.BackgroundTransparency = 1
+
+    local tb = Instance.new("TextBox", f)
+    tb.PlaceholderText = "Enter Key"
+    tb.Text = ""
+    tb.TextScaled = true
+    tb.Size = UDim2.new(0.3, 0, 0.05, 0)
+    tb.Position = UDim2.new(0.35, 0, 0.55, 0)
+
+    local btn = Instance.new("TextButton", f)
+    btn.Text = "Submit"
+    btn.TextScaled = true
+    btn.Size = UDim2.new(0.2, 0, 0.05, 0)
+    btn.Position = UDim2.new(0.4, 0, 0.63, 0)
+    btn.BackgroundColor3 = Themes[self.Theme].Accent
+    btn.TextColor3 = Themes[self.Theme].Text
+
+    btn.MouseButton1Click:Connect(function()
+        if tb.Text == self.RequiredKey then
+            f:Destroy()
+            self:BuildUI()
+        else
+            lbl.Text = "Wrong Key!"
+        end
+    end)
+end
+
+function GPTLib:BuildUI()
+    if self.LoadingScreen then
+        local lbl = Instance.new("TextLabel", self.Root)
+        lbl.Size = UDim2.new(1, 0, 1, 0)
+        lbl.BackgroundColor3 = Themes[self.Theme].Background
+        lbl.Text = self.LoadingText
+        lbl.TextScaled = true
+        lbl.TextColor3 = Themes[self.Theme].Text
+        wait(1.5)
+        lbl:Destroy()
+    end
+
+    local win = Instance.new("Frame", self.Root)
+    win.Name = "Window"
+    win.Size = UDim2.new(0, 600, 0, 400)
+    win.Position = UDim2.new(0.2, 0, 0.2, 0)
+    win.BackgroundColor3 = Themes[self.Theme].Background
+    win.Active = true
+    win.Draggable = true
+
+    local sidebar = Instance.new("Frame", win)
+    sidebar.Name = "Sidebar"
+    sidebar.Size = UDim2.new(0, 150, 1, 0)
+    sidebar.BackgroundColor3 = Themes[self.Theme].Accent
+
+    local sbLayout = Instance.new("UIListLayout", sidebar)
+    sbLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+    local content = Instance.new("Frame", win)
+    content.Name = "Content"
+    content.Position = UDim2.new(0, 150, 0, 0)
+    content.Size = UDim2.new(1, -150, 1, 0)
+    content.BackgroundColor3 = Themes[self.Theme].Background
+
+    self.Window = win
+    self.Sidebar = sidebar
+    self.ContentFrame = content
+
+    local btnMin = Instance.new("TextButton", win)
+    btnMin.Text = "_"
+    btnMin.Size = UDim2.new(0, 30, 0, 30)
+    btnMin.Position = UDim2.new(1, -60, 0, 0)
+    btnMin.MouseButton1Click:Connect(function()
+        TweenService:Create(win, TweenInfo.new(0.25), {Size = UDim2.new(0, 150, 0, 30)}):Play()
+    end)
+
+    local btnClose = Instance.new("TextButton", win)
+    btnClose.Text = "X"
+    btnClose.Size = UDim2.new(0, 30, 0, 30)
+    btnClose.Position = UDim2.new(1, -30, 0, 0)
+    btnClose.MouseButton1Click:Connect(function()
+        win.Visible = false
+        if not self.ShowBtn then
+            local show = Instance.new("TextButton", self.Root)
+            show.Text = self.Title
+            show.Size = UDim2.new(0, 100, 0, 40)
+            show.Position = UDim2.new(0.5, -50, 0.9, 0)
+            show.MouseButton1Click:Connect(function()
+                win.Visible = true
+                show:Destroy()
+                self.ShowBtn = nil
+            end)
+            self.ShowBtn = show
+        end
+    end)
+
+    -- ========== Widget Methods ==========
+
+    function self:CreateTab(name)
+        local btn = Instance.new("TextButton", sidebar)
+        btn.Text = name
+        btn.Size = UDim2.new(1, 0, 0, 40)
+        local frame = Instance.new("ScrollingFrame", content)
+        frame.Name = name .. "_Content"
+        frame.Size = UDim2.new(1, 0, 1, 0)
+        frame.Visible = (#self.Tabs == 0)
+        frame.BackgroundTransparency = 1
+        frame.CanvasSize = UDim2.new(0, 0, 2, 0)
+        local layout = Instance.new("UIListLayout", frame)
+        layout.SortOrder = Enum.SortOrder.LayoutOrder
+        self.Tabs[name] = {Frame = frame, Subtabs = {}}
+
+        btn.MouseButton1Click:Connect(function()
+            for t, tabData in pairs(self.Tabs) do
+                tabData.Frame.Visible = (t == name)
+            end
+        end)
+
+        return {
+            AddSubTab = function(subName)
+                local subBtn = Instance.new("TextButton", frame)
+                subBtn.Text = subName
+                subBtn.Size = UDim2.new(1, 0, 0, 30)
+                local subFrame = Instance.new("Frame", frame)
+                subFrame.Name = subName .. "_Frame"
+                subFrame.Size = UDim2.new(1, 0, 0, 0)
+                subFrame.Visible = false
+                subFrame.BackgroundTransparency = 1
+                self.Tabs[name].Subtabs[subName] = subFrame
+                subBtn.MouseButton1Click:Connect(function()
+                    for _, sf in pairs(self.Tabs[name].Subtabs) do sf.Visible = (sf == subFrame) end
+                    subFrame.Visible = true
+                end)
+                return {
+                    _Holder = subFrame,
+                    AddButton = function(cfg) self:CreateButton(cfg).Parent = subFrame end,
+                    AddToggle = function(cfg) self:CreateToggle(cfg).Parent = subFrame end,
+                    AddSlider = function(cfg) self:CreateSlider(cfg).Parent = subFrame end,
+                    AddColorPicker = function(cfg) self:CreateColorPicker(cfg).Parent = subFrame end,
+                    AddKeyBind = function(cfg) self:CreateKeyBind(cfg).Parent = subFrame end,
+                    AddDropdown = function(cfg) self:CreateDropdown(cfg).Parent = subFrame end,
+                }
+            end
+        }
+    end
+
+    function self:CreateButton(cfg)
+        local btn = Instance.new("TextButton", self.ContentFrame)
+        btn.Text = cfg.Name or "Button"
+        btn.Size = UDim2.new(0, 180, 0, 36)
+        btn.BackgroundColor3 = Themes[self.Theme].Accent
+        btn.TextColor3 = Themes[self.Theme].Text
+        btn.TextScaled = true
+        btn.MouseButton1Click:Connect(function() cfg.Callback and cfg.Callback() end)
+        return btn
+    end
+
+    function self:CreateToggle(cfg)
+        local frame = Instance.new("Frame", self.ContentFrame)
+        frame.Size = UDim2.new(0, 200, 0, 36)
+        frame.BackgroundTransparency = 1
+        local lbl = Instance.new("TextLabel", frame)
+        lbl.Text = cfg.Name or "Toggle"
+        lbl.Size = UDim2.new(0.6, 0, 1, 0)
+        lbl.TextColor3 = Themes[self.Theme].Text
+        local btn = Instance.new("TextButton", frame)
+        btn.Size = UDim2.new(0.4, -2, 1, -2)
+        btn.Position = UDim2.new(0.6, 2, 0, 2)
+        btn.Text = cfg.CurrentValue and "ON" or "OFF"
+        btn.BackgroundColor3 = Themes[self.Theme].Accent
+        btn.TextColor3 = Themes[self.Theme].Text
+        btn.TextScaled = true
+        local state = cfg.CurrentValue
+        btn.MouseButton1Click:Connect(function()
+            state = not state
+            btn.Text = state and "ON" or "OFF"
+            cfg.Callback and cfg.Callback(state)
+        end)
+        return frame
+    end
+
+    function self:CreateSlider(cfg)
+        local frame = Instance.new("Frame", self.ContentFrame)
+        frame.Size = UDim2.new(0, 240, 0, 50)
+        frame.BackgroundTransparency = 1
+        local lbl = Instance.new("TextLabel", frame)
+        lbl.TextColor3 = Themes[self.Theme].Text
+        lbl.TextScaled = true
+        lbl.Size = UDim2.new(1, 0, 0.4, 0)
+        local min, max = unpack(cfg.Range or {0, 100})
+        local value = cfg.CurrentValue or min
+        lbl.Text = cfg.Name .. ": " .. tostring(value)
+        lbl.Position = UDim2.new(0, 0, 0, 0)
+        local barBg = Instance.new("Frame", frame)
+        barBg.Size = UDim2.new(1, -20, 0, 10)
+        barBg.Position = UDim2.new(0, 10, 0.5, -5)
+        barBg.BackgroundColor3 = Themes[self.Theme].Accent
+        local barFg = Instance.new("Frame", barBg)
+        barFg.Size = UDim2.new((value - min) / (max - min), 0, 1, 0)
+        barFg.BackgroundColor3 = Themes[self.Theme].Background
+        barBg.InputBegan:Connect(function(inp)
+            if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+                local baseX = barBg.AbsolutePosition.X
+                local function move(pos)
+                    local x = math.clamp(pos.X - baseX, 0, barBg.AbsoluteSize.X)
+                    value = math.floor(min + (max - min) * (x / barBg.AbsoluteSize.X))
+                    lbl.Text = cfg.Name .. ": " .. value
+                    barFg.Size = UDim2.new((value - min) / (max - min), 0, 1, 0)
+                    cfg.Callback and cfg.Callback(value)
+                end
+                move(inp.Position)
+                local mv, ed
+                mv = UIS.InputChanged:Connect(function(i)
+                    if i.UserInputType == Enum.UserInputType.MouseMovement then move(i.Position) end
+                end)
+                ed = UIS.InputEnded:Connect(function(i)
+                    if i.UserInputType == Enum.UserInputType.MouseButton1 then
+                        mv:Disconnect()
+                        ed:Disconnect()
+                    end
+                end)
+            end
+        end)
+        return frame
+    end
+
+    function self:CreateColorPicker(cfg)
+        local btn = Instance.new("TextButton", self.ContentFrame)
+        btn.Text = cfg.Name or "Color"
+        btn.Size = UDim2.new(0, 180, 0, 36)
+        btn.TextScaled = true
+        btn.TextColor3 = Themes[self.Theme].Text
+        btn.BackgroundColor3 = cfg.CurrentColor or Themes[self.Theme].Accent
+        btn.MouseButton1Click:Connect(function()
+            local col = Color3.fromHSV(math.random(), 1, 1)
+            btn.BackgroundColor3 = col
+            cfg.Callback and cfg.Callback(col)
+        end)
+        return btn
+    end
+
+    function self:CreateKeyBind(cfg)
+        local btn = Instance.new("TextButton", self.ContentFrame)
+        btn.Text = cfg.Name .. ": [" .. (cfg.CurrentKeybind or "None") .. "]"
+        btn.Size = UDim2.new(0, 200, 0, 36)
+        btn.TextColor3 = Themes[self.Theme].Text
+        btn.TextScaled = true
+        local binds = {}
+        btn.MouseButton1Click:Connect(function()
+            btn.Text = cfg.Name .. ": [Press Key]"
+            local conn
+            conn = UIS.InputBegan:Connect(function(i)
+                if i.UserInputType == Enum.UserInputType.Keyboard then
+                    cfg.CurrentKeybind = i.KeyCode.Name
+                    btn.Text = cfg.Name .. ": [" .. cfg.CurrentKeybind .. "]"
+                    binds[cfg.CurrentKeybind] = true
+                    conn:Disconnect()
+                    cfg.Callback and cfg.Callback(cfg.CurrentKeybind)
+                end
+            end)
+        end)
+        UIS.InputBegan:Connect(function(i)
+            if binds[i.KeyCode.Name] and cfg.Callback then
+                cfg.Callback(i.KeyCode.Name)
+            end
+        end)
+        return btn
+    end
+
+    function self:CreateDropdown(cfg)
+        local frame = Instance.new("Frame", self.ContentFrame)
+        frame.Size = UDim2.new(0, 200, 0, 36)
+        frame.BackgroundColor3 = Themes[self.Theme].Accent
+        local open = false
+        local btn = Instance.new("TextButton", frame)
+        btn.Size = UDim2.new(1, 0, 1, 0)
+        btn.TextColor3 = Themes[self.Theme].Text
+        btn.TextScaled = true
+        btn.Text = cfg.Name .. ": " .. (cfg.CurrentSelection or "None")
+        local list = Instance.new("Frame", frame)
+        list.Size = UDim2.new(1, 0, 0, 0)
+        list.Position = UDim2.new(0, 0, 1, 0)
+        list.ClipsDescendants = true
+        list.BackgroundColor3 = Themes[self.Theme].Background
+        local layout = Instance.new("UIListLayout", list)
+
+        btn.MouseButton1Click:Connect(function()
+            open = not open
+            if open then
+                list:TweenSize(UDim2.new(1,0,0,#cfg.Options*30), "Out", "Quad", 0.2, true)
+            else
+                list:TweenSize(UDim2.new(1,0,0,0), "Out", "Quad", 0.2, true)
+            end
+        end)
+
+        for _, opt in ipairs(cfg.Options or {}) do
+            local it = Instance.new("TextButton", list)
+            it.Text = opt
+            it.Size = UDim2.new(1, 0, 0, 30)
+            it.TextColor3 = Themes[self.Theme].Text
+            it.MouseButton1Click:Connect(function()
+                cfg.CurrentSelection = opt
+                btn.Text = cfg.Name .. ": " .. opt
+                cfg.Callback and cfg.Callback(opt)
+                list:TweenSize(UDim2.new(1,0,0,0), "Out", "Quad", 0.2, true)
+                open = false
+            end)
+        end
+
+        return frame
+    end
+
+    function self:Notification(text, duration)
+        duration = duration or 3
+        local nf = Instance.new("Frame", self.Root)
+        nf.Size = UDim2.new(0, 300, 0, 50)
+        nf.Position = UDim2.new(1, -310, 0, 10)
+        nf.BackgroundColor3 = Themes[self.Theme].Accent
+        nf.AnchorPoint = Vector2.new(1, 0)
+        local lbl = Instance.new("TextLabel", nf)
+        lbl.Text = text
+        lbl.Size = UDim2.new(1, 1, 1, 0)
+        lbl.TextColor3 = Themes[self.Theme].Text
+        lbl.TextScaled = true
+        lbl.BackgroundTransparency = 1
+        TweenService:Create(nf, TweenInfo.new(0.4), {Position = UDim2.new(1, -10, 0, 10)}):Play()
+        delay(duration, function()
+            TweenService:Create(nf, TweenInfo.new(0.4), {Position = UDim2.new(1, 310, 0, 10)}):Play()
+            wait(0.5)
+            nf:Destroy()
+        end)
+    end
+
+end
+
+return GPTLib
