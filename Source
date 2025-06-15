@@ -123,16 +123,43 @@ function GPTLib:BuildUI()
     win.Size = UDim2.new(0, 600, 0, 400)
     win.Position = UDim2.new(0.2, 0, 0.2, 0)
     win.BackgroundColor3 = Themes[self.Theme].Background
+    win.BorderSizePixel = 0
     win.Active = true
-    win.Draggable = true
+
+    -- 🟡 UserInputService-based dragging
+    local dragging, dragInput, dragStart, startPos
+    local function update(input)
+        local delta = input.Position - dragStart
+        win.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+    win.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = win.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+    win.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+    UIS.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            update(input)
+        end
+    end)
 
     local sidebar = Instance.new("Frame", win)
     sidebar.Name = "Sidebar"
     sidebar.Size = UDim2.new(0, 150, 1, 0)
     sidebar.BackgroundColor3 = Themes[self.Theme].Accent
-
-    local sbLayout = Instance.new("UIListLayout", sidebar)
-    sbLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    Instance.new("UIListLayout", sidebar).SortOrder = Enum.SortOrder.LayoutOrder
 
     local content = Instance.new("Frame", win)
     content.Name = "Content"
@@ -140,10 +167,9 @@ function GPTLib:BuildUI()
     content.Size = UDim2.new(1, -150, 1, 0)
     content.BackgroundColor3 = Themes[self.Theme].Background
 
-    self.Window = win
-    self.Sidebar = sidebar
-    self.ContentFrame = content
+    self.Window, self.Sidebar, self.ContentFrame = win, sidebar, content
 
+    -- 🟢 Minimize and Close
     local btnMin = Instance.new("TextButton", win)
     btnMin.Text = "_"
     btnMin.Size = UDim2.new(0, 30, 0, 30)
@@ -171,6 +197,7 @@ function GPTLib:BuildUI()
             self.ShowBtn = show
         end
     end)
+end
 
     -- ========== Widget Methods ==========
 
